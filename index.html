@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detector de URLs 404</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f7fa;
+            color: #333;
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .upload-box {
+            border: 2px dashed #3498db;
+            border-radius: 8px;
+            padding: 30px;
+            text-align: center;
+            background-color: #fff;
+            margin-bottom: 20px;
+            transition: all 0.3s;
+        }
+        .upload-box:hover {
+            border-color: #2980b9;
+            background-color: #f8f9fa;
+        }
+        #file-input {
+            display: none;
+        }
+        .upload-btn {
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            transition: background-color 0.3s;
+        }
+        .upload-btn:hover {
+            background-color: #2980b9;
+        }
+        #results {
+            margin-top: 20px;
+            display: none;
+        }
+        .url-item {
+            padding: 10px;
+            border-bottom: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+        }
+        .url-item.error {
+            color: #e74c3c;
+        }
+        .url-item.success {
+            color: #27ae60;
+        }
+        #download-btn {
+            background-color: #2ecc71;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+            display: none;
+            transition: background-color 0.3s;
+        }
+        #download-btn:hover {
+            background-color: #27ae60;
+        }
+        .status {
+            text-align: center;
+            margin: 20px 0;
+            font-weight: bold;
+        }
+        .progress-bar {
+            width: 100%;
+            background-color: #ecf0f1;
+            border-radius: 4px;
+            margin: 20px 0;
+        }
+        .progress {
+            height: 10px;
+            background-color: #3498db;
+            border-radius: 4px;
+            width: 0%;
+            transition: width 0.3s;
+        }
+    </style>
+</head>
+<body>
+    <h1>🔍 Detector de URLs 404</h1>
+    
+    <div class="upload-box" id="drop-zone">
+        <p>Arrastra tu archivo .txt aquí o haz clic para seleccionarlo</p>
+        <button class="upload-btn" id="select-file">Seleccionar archivo</button>
+        <input type="file" id="file-input" accept=".txt">
+    </div>
+
+    <div class="progress-bar">
+        <div class="progress" id="progress-bar"></div>
+    </div>
+
+    <div class="status" id="status">Esperando archivo...</div>
+
+    <div id="results"></div>
+
+    <button id="download-btn">Descargar reporte (.txt)</button>
+
+    <script>
+        const fileInput = document.getElementById('file-input');
+        const selectFileBtn = document.getElementById('select-file');
+        const dropZone = document.getElementById('drop-zone');
+        const resultsDiv = document.getElementById('results');
+        const downloadBtn = document.getElementById('download-btn');
+        const statusDiv = document.getElementById('status');
+        const progressBar = document.getElementById('progress-bar');
+
+        let brokenUrls = [];
+
+        // Selección manual de archivo
+        selectFileBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', handleFile);
+
+        // Drag and Drop
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#2980b9';
+            dropZone.style.backgroundColor = '#eaf2f8';
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.style.borderColor = '#3498db';
+            dropZone.style.backgroundColor = '#fff';
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.style.borderColor = '#3498db';
+            dropZone.style.backgroundColor = '#fff';
+            
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleFile();
+            }
+        });
+
+        // Procesar archivo
+        function handleFile() {
+            const file = fileInput.files[0];
+            if (!file || file.type !== 'text/plain') {
+                statusDiv.textContent = 'Por favor, sube un archivo .txt válido.';
+                return;
+            }
+
+            statusDiv.textContent = 'Procesando archivo...';
+            resultsDiv.innerHTML = '';
+            brokenUrls = [];
+            
+            const reader = new FileReader();
+            reader.onload = async (e) => {
+                const content = e.target.result;
+                const urls = extractUrls(content);
+                
+                if (urls.length === 0) {
+                    statusDiv.textContent = 'No se encontraron URLs en el archivo.';
+                    return;
+                }
+
+                statusDiv.textContent = `Verificando ${urls.length} URLs...`;
+                await checkUrls(urls);
+                
+                if (brokenUrls.length > 0) {
+                    downloadBtn.style.display = 'block';
+                    statusDiv.textContent = `✅ Proceso completado. ${brokenUrls.length} URLs rotas encontradas.`;
+                } else {
+                    statusDiv.textContent = '✅ Todas las URLs están activas (no se encontraron errores 404).';
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        // Extraer URLs del texto
+        function extractUrls(text) {
+            const urlRegex = /https?:\/\/[^\s<>"']+/g;
+            const urls = text.match(urlRegex) || [];
+            return [...new Set(urls)]; // Eliminar duplicados
+        }
+
+        // Verificar URLs
+        async function checkUrls(urls) {
+            progressBar.style.width = '0%';
+            resultsDiv.style.display = 'block';
+            
+            for (let i = 0; i < urls.length; i++) {
+                const url = urls[i];
+                const urlElement = document.createElement('div');
+                urlElement.className = 'url-item';
+                urlElement.innerHTML = `<span>${url}</span> <span>Verificando...</span>`;
+                resultsDiv.appendChild(urlElement);
+                
+                try {
+                    const response = await fetch(url, { method: 'HEAD', mode: 'no-cors' });
+                    
+                    if (response.status === 404 || response.type === 'opaque') {
+                        urlElement.className = 'url-item error';
+                        urlElement.innerHTML = `<span>${url}</span> <span>❌ 404 No encontrado</span>`;
+                        brokenUrls.push(url);
+                    } else {
+                        urlElement.className = 'url-item success';
+                        urlElement.innerHTML = `<span>${url}</span> <span>✅ ${response.status} OK</span>`;
+                    }
+                } catch (error) {
+                    urlElement.className = 'url-item error';
+                    urlElement.innerHTML = `<span>${url}</span> <span>🚫 Error de conexión</span>`;
+                    brokenUrls.push(url);
+                }
+                
+                // Actualizar barra de progreso
+                progressBar.style.width = `${((i + 1) / urls.length) * 100}%`;
+            }
+        }
+
+        // Descargar reporte
+        downloadBtn.addEventListener('click', () => {
+            if (brokenUrls.length === 0) return;
+            
+            const blob = new Blob([brokenUrls.join('\n')], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'urls_rotas.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>
